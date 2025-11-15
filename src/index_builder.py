@@ -12,6 +12,7 @@ import pickle
 import pathlib
 import re
 import json
+import torch
 from typing import List, Dict
 
 import faiss
@@ -21,6 +22,13 @@ from sentence_transformers import SentenceTransformer
 from src.preprocessing.chunking import DocumentChunker, ChunkConfig
 from src.preprocessing.extraction import extract_sections_from_markdown
 from src.config import QueryPlanConfig
+
+from multiprocessing import Pool, cpu_count
+
+if torch.cuda.is_available():
+    device = 'cuda'
+else:
+    device = 'cpu'
 
 
 # ----- runtime parallelism knobs (avoid oversubscription) -----
@@ -149,9 +157,9 @@ def build_index(
         
     # Step 2: Create embeddings for FAISS index
     print(f"Embedding {len(all_chunks):,} chunks with {pathlib.Path(embedding_model_path).stem} ...")
-    embedder = SentenceTransformer(embedding_model_path)
+    embedder = SentenceTransformer(embedding_model_path, device=device)
     embeddings = embedder.encode(
-        all_chunks, batch_size=4, show_progress_bar=True
+        all_chunks, batch_size=4, show_progress_bar=True, normalize_embeddings=True
     )
 
     # Step 3: Build FAISS index
@@ -164,7 +172,9 @@ def build_index(
 
     # Step 4: Build BM25 index
     print(f"Building BM25 index for {len(all_chunks):,} chunks...")
-    tokenized_chunks = [preprocess_for_bm25(chunk) for chunk in all_chunks]
+    with Pool(cpu_count()) as p:
+        tokenized_chunks = p.map(preprocess_for_bm25, all_chunks)
+    # tokenized_chunks = [preprocess_for_bm25(chunk) for chunk in all_chunks]
     bm25_index = BM25Okapi(tokenized_chunks)
     with open(artifacts_dir / f"{index_prefix}_bm25.pkl", "wb") as f:
         pickle.dump(bm25_index, f)
