@@ -398,7 +398,7 @@ def build_benchmark_index(all_chunks: List[str]) -> tuple[List[str], List[List[i
                 if k.lower() in chunk_words:
                     keyword_matches += 1
             
-            # if there are one matching keyword, we treat it as a golden chunk
+            # if there are at least one matching keyword, we treat it as a golden chunk
             if keyword_matches >= 1:
                 golden_chunks.append(idx)
         
