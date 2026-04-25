@@ -177,6 +177,11 @@ def config(pytestconfig):
         # Query Enhancement (HyDE)
         "use_hyde": cfg.get("use_hyde", False),
         "hyde_max_tokens": cfg.get("hyde_max_tokens", 300),
+
+        # Query Enhancement (multi_query_retrieval)
+        "use_multi_query_retrieval": cfg.get("use_multi_query_retrieval", False),
+        "multi_query_retrieval_max_tokens": cfg.get("multi_query_retrieval_max_tokens", 300),
+        "question_variation_nums": cfg.get("question_variation_nums", 3),
     }
 
     # Handle enable/disable chunks

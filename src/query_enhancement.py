@@ -44,10 +44,63 @@ def generate_hypothetical_document(
         prompt,
         model_path,
         max_tokens=max_tokens,
+        temperature=0,
         **llm_kwargs
     )
     
-    return hypothetical.strip()
+    return hypothetical["choices"][0]["text"].strip()
+
+def generate_multiple_retrieval_queries(
+    query: str,
+    model_path: str,
+    max_tokens: int = 200,
+    question_variation_nums: int = 3,
+    **llm_kwargs
+) -> list[str]:
+    """
+    Multi-Query Retrieval: Generate multiple alterative queries of the original query for broader retrieval coverage.
+    """
+    prompt = textwrap.dedent(f"""\
+        <|im_start|>system
+        You are a database systems expert. Given a question, generate {question_variation_nums} alternative versions of it to improve document retrieval from a database systems textbook.
+        Each version should approach the question from a different angle: definitions, mechanisms, or applications.
+        Use precise database terminology from topics like relational model, SQL, transactions, indexing, normalization, and database design.
+        Output one question per line with no numbering, labels, or explanation.
+        
+        Example:
+        Original: What is a B+ tree?
+        Variations:
+        How does a B+ tree structure support efficient range queries in database indexes?
+        What are the properties of B+ tree nodes used in storage and retrieval?
+        How do B+ trees differ from binary search trees in database file organization?
+        <|im_end|>
+        <|im_start|>user
+        Original Question: {query}
+        <|im_end|>
+        <|im_start|>assistant
+        """)
+
+    prompt = text_cleaning(prompt)
+    output = run_llama_cpp(
+        prompt,
+        model_path,
+        max_tokens=max_tokens,
+        temperature=0.5,
+        **llm_kwargs
+    )
+
+    # get the queries and strip them
+    lines = output["choices"][0]["text"].split('\n')
+    variations = [line.strip() for line in lines if line.strip()]
+
+    all_queries = [query] + variations
+    print(f"original_query: {query}")
+
+    # get the questions we need
+    final_queries = all_queries[:question_variation_nums + 1]
+    print(f"final_queries: {final_queries}")
+
+    return final_queries
 
 def correct_query_grammar(
     query: str,

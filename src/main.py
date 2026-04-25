@@ -17,7 +17,7 @@ from src.index_builder import build_index
 from src.instrumentation.logging import get_logger
 from src.ranking.ranker import EnsembleRanker
 from src.preprocessing.chunking import DocumentChunker
-from src.query_enhancement import generate_hypothetical_document, contextualize_query
+from src.query_enhancement import generate_hypothetical_document, contextualize_query, generate_multiple_retrieval_queries
 from src.retriever import (
     filter_retrieved_chunks, 
     BM25Retriever, 
@@ -138,9 +138,21 @@ def get_answer(
         
         pool_n = max(cfg.num_candidates, cfg.top_k + 10)
         raw_scores: Dict[str, Dict[int, float]] = {}
-        for retriever in retrievers:
-            # print(f"Getting scores from retriever: {retriever.name}...")
-            raw_scores[retriever.name] = retriever.get_scores(retrieval_query, pool_n, chunks)
+        if cfg.use_multi_query_retrieval:
+            retrieval_queries = generate_multiple_retrieval_queries(question, cfg.gen_model, max_tokens=cfg.multi_query_retrieval_max_tokens, question_variation_nums=cfg.question_variation_nums)
+            for retriever in retrievers:
+                # collect all questions and rank the scores together
+                merged_queries: Dict[int, float] = {}
+                for query in retrieval_queries:
+                    query_scores = retriever.get_scores(query, pool_n, chunks)
+                    for chunk_id, score in query_scores.items():
+                        # add to answers if it doesn't exist or if it's a better answer wit the same chunk_id
+                        if chunk_id not in merged_queries or score > merged_queries[chunk_id]:
+                            merged_queries[chunk_id] = score
+                raw_scores[retriever.name] = merged_queries
+        else:
+            for retriever in retrievers:
+                raw_scores[retriever.name] = retriever.get_scores(retrieval_query, pool_n, chunks)
         # TODO: Fix retrieval logging.
 
         # print("Raw scores from retrievers:")
