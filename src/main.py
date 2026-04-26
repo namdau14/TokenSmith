@@ -138,7 +138,8 @@ def get_answer(
         
         pool_n = max(cfg.num_candidates, cfg.top_k + 10)
         raw_scores: Dict[str, Dict[int, float]] = {}
-        if cfg.use_multi_query_retrieval:
+        # approach 1: max-pooling, get best answer
+        if cfg.use_multi_query_retrieval_max_pooling:
             retrieval_queries = generate_multiple_retrieval_queries(question, cfg.gen_model, max_tokens=cfg.multi_query_retrieval_max_tokens, question_variation_nums=cfg.question_variation_nums)
             for retriever in retrievers:
                 # collect all questions and rank the scores together
@@ -150,14 +151,31 @@ def get_answer(
                         if chunk_id not in merged_queries or score > merged_queries[chunk_id]:
                             merged_queries[chunk_id] = score
                 raw_scores[retriever.name] = merged_queries
+
+        # approach 2: reciprocal rank fusion
+        if cfg.use_multi_query_retrieval_rrf:
+            retrieval_query = generate_multiple_retrieval_queries(question, cfg.gen_model, max_tokens=cfg.multi_query_retrieval_max_tokens, question_variation_nums=cfg.question_variation_nums)
+            for retriever in retrievers:
+                # Merge scores across queries using reciprocal rank fusion.
+                # Each query contributes 1/(rrf_k + rank) to a chunk's cumulative score,
+                # rewarding chunks that rank highly across multiple queries.
+                merged_queries: Dict[int, float] = {}
+                for query in retrieval_query:
+                    query_scores = retriever.get_scores(query, pool_n, chunks)
+                    ranked_ids = sorted(query_scores, key=lambda i: query_scores[i], reverse=True)
+                    for rank, chunk_id in enumerate(ranked_ids):
+                        if chunk_id not in merged_queries:
+                            merged_queries[chunk_id] = 0.0
+                        merged_queries[chunk_id] += 1.0 / (cfg.rrf_k + rank + 1)
+                raw_scores[retriever.name] = merged_queries
         else:
             for retriever in retrievers:
                 raw_scores[retriever.name] = retriever.get_scores(retrieval_query, pool_n, chunks)
         # TODO: Fix retrieval logging.
 
-        # print("Raw scores from retrievers:")
-        # for retriever_name, score_dict in raw_scores.items():
-        #     print(f"  {retriever_name}: {list(score_dict.values())}")
+        print("Raw scores from retrievers:")
+        for retriever_name, score_dict in raw_scores.items():
+            print(f"  {retriever_name}: {list(score_dict.values())}")
         # Step 2: Ranking
         ordered, scores = ranker.rank(raw_scores=raw_scores)
         # print(f"Ordered candidate indices after ranking: {ordered[:cfg.top_k]}")
@@ -171,32 +189,53 @@ def get_answer(
         
         # Capture chunk info if in test mode
         if is_test_mode:
-            # Compute individual ranker ranks
-            faiss_scores = raw_scores.get("faiss", {})
-            bm25_scores = raw_scores.get("bm25", {})
-            index_scores = raw_scores.get("index_keywords", {})
-            
-            faiss_ranked = sorted(faiss_scores.keys(), key=lambda i: faiss_scores[i], reverse=True)
-            bm25_ranked = sorted(bm25_scores.keys(), key=lambda i: bm25_scores[i], reverse=True)
-            index_ranked = sorted(index_scores.keys(), key=lambda i: index_scores[i], reverse=True)
-            
-            faiss_ranks = {idx: rank + 1 for rank, idx in enumerate(faiss_ranked)}
-            bm25_ranks = {idx: rank + 1 for rank, idx in enumerate(bm25_ranked)}
-            index_ranks = {idx: rank + 1 for rank, idx in enumerate(index_ranked)}
-            
-            chunks_info = []
-            for rank, idx in enumerate(topk_idxs, 1):
-                chunks_info.append({
-                    "rank": rank,
-                    "chunk_id": idx,
-                    "content": chunks[idx],
-                    "faiss_score": faiss_scores.get(idx, 0),
-                    "faiss_rank": faiss_ranks.get(idx, 0),
-                    "bm25_score": bm25_scores.get(idx, 0),
-                    "bm25_rank": bm25_ranks.get(idx, 0),
-                    "index_score": index_scores.get(idx, 0),
-                    "index_rank": index_ranks.get(idx, 0),
-                })
+            if cfg.use_multi_query_retrieval_rrf and len(retrieval_query) > 1:           
+                chunks_info = []
+                for rank, idx in enumerate(topk_idxs, 1):
+                    chunk_entry = {
+                        "rank": rank,
+                        "chunk_id": idx,
+                        "content": chunks[idx],
+                        "rrf_score": scores[rank - 1] if scores else 0,
+                        "per_query": {}
+                    }
+                    for rv, s_dict in raw_scores.items():
+                        base_rv, q_num = rv.rsplit('_', 1) if '_q' in rv else (rv, "q0")
+                        ranked_ids = sorted(s_dict, key=lambda i: s_dict[i], reverse=True)
+                        chunk_rank = next((r+1 for r, i in enumerate(ranked_ids) if i == idx), None)
+                        if q_num not in chunk_entry["per_query"]:
+                            chunk_entry["per_query"][q_num] = {}
+                        chunk_entry["per_query"][q_num][base_rv] = {
+                            "rank": chunk_rank,
+                            "rrf_contribution": 1.0 / (cfg.rrf_k + chunk_rank) if chunk_rank else 0
+                        }
+                    chunks_info.append(chunk_entry)
+            else:    
+                faiss_scores = raw_scores.get("faiss", {})
+                bm25_scores = raw_scores.get("bm25", {})
+                index_scores = raw_scores.get("index_keywords", {})
+
+                faiss_ranked = sorted(faiss_scores.keys(), key=lambda i: faiss_scores[i], reverse=True)
+                bm25_ranked = sorted(bm25_scores.keys(), key=lambda i: bm25_scores[i], reverse=True)
+                index_ranked = sorted(index_scores.keys(), key=lambda i: index_scores[i], reverse=True)
+
+                faiss_ranks = {idx: rank + 1 for rank, idx in enumerate(faiss_ranked)}
+                bm25_ranks = {idx: rank + 1 for rank, idx in enumerate(bm25_ranked)}
+                index_ranks = {idx: rank + 1 for rank, idx in enumerate(index_ranked)}
+
+                chunks_info = []
+                for rank, idx in enumerate(topk_idxs, 1):
+                    chunks_info.append({
+                        "rank": rank,
+                        "chunk_id": idx,
+                        "content": chunks[idx],
+                        "faiss_score": faiss_scores.get(idx, 0),
+                        "faiss_rank": faiss_ranks.get(idx, 0),
+                        "bm25_score": bm25_scores.get(idx, 0),
+                        "bm25_rank": bm25_ranks.get(idx, 0),
+                        "index_score": index_scores.get(idx, 0),
+                        "index_rank": index_ranks.get(idx, 0),
+                    })
 
         # Step 3: Final re-ranking
         ranked_chunks = rerank(question, ranked_chunks, mode=cfg.rerank_mode, top_n=cfg.rerank_top_k)

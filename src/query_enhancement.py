@@ -93,6 +93,9 @@ def generate_multiple_retrieval_queries(
     lines = output["choices"][0]["text"].split('\n')
     variations = [line.strip() for line in lines if line.strip()]
 
+    # Remove numbering if present
+    variations = [line.split('.', 1)[-1].strip() if '.' in line[:3] else line for line in variations]
+
     all_queries = [query] + variations
     print(f"original_query: {query}")
 
