@@ -173,9 +173,9 @@ def get_answer(
                 raw_scores[retriever.name] = retriever.get_scores(retrieval_query, pool_n, chunks)
         # TODO: Fix retrieval logging.
 
-        print("Raw scores from retrievers:")
-        for retriever_name, score_dict in raw_scores.items():
-            print(f"  {retriever_name}: {list(score_dict.values())}")
+        # print("Raw scores from retrievers:")
+        # for retriever_name, score_dict in raw_scores.items():
+        #     print(f"  {retriever_name}: {list(score_dict.values())}")
         # Step 2: Ranking
         ordered, scores = ranker.rank(raw_scores=raw_scores)
         # print(f"Ordered candidate indices after ranking: {ordered[:cfg.top_k]}")

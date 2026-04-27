@@ -75,3 +75,17 @@ benchmarks:
     keywords: ["lossy decomposition", "spurious tuples", "lossless join", "superkey", "natural join", "information loss", "functional dependency"]
     similarity_threshold: 0.70
     ideal_retrieved_chunks: [431, 430, 432, 433, 440]
+
+  - id: "strict_2pc_vs_normal_2pc"
+    question: "Explain how strict two-phase commit improves on the original two-phase commit protocol?"
+    expected_answer: "Strict two-phase locking protocol requires not only that locking be two phase, but also that all exclusive-mode locks taken by a transaction be held until that transaction commits. This requirement ensures that any data written by an uncommitted transaction are locked in exclusive mode until the transaction commits, preventing any other transaction from reading the data."
+    keywords: ["strict two-phase locking protocol", "exclusive-mode locks", "uncommitted transactions"]
+    similarity_threshold: 0.70
+    ideal_retrieved_chunks: [1094, 1095, 1096, 1097]
+
+  - id: "aries_phases"
+    question: "Describe the phases in ARIES recovery protocol for database transactions?"
+    expected_answer: " Performing necessary actions to bring the system to a consistent state, which may involve: Undoing transactions that have not yet been committed. Redoing transactions that have been committed but not yet written to disk"
+    keywords: ["consistent state", "undo", "redo"]
+    similarity_threshold: 0.70
+    ideal_retrieved_chunks: [1191, 1201, 1205]

@@ -25,7 +25,7 @@ def generate_hypothetical_document(
         You are a database systems expert. Generate a concise, technical answer using precise database terminology.
         Write in the formal academic style of Database System Concepts (Silberschatz, Korth, Sudarshan).
         Use specific terms for: relational model concepts (relations, tuples, attributes, keys, schemas), 
-        SQL and query languages, transactions (ACID properties, concurrency control, recovery), 
+        SQL and query languages, transactions (ACID properties, concurrency control and two-phase locking, logging and recovery with ARIES protocol), 
         storage structures (indexes, B+ trees), normalization (functional dependencies, normal forms), 
         and database design (E-R model, decomposition).
         Focus on definitions, mechanisms, and technical accuracy rather than examples.
